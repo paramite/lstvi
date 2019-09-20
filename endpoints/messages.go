@@ -29,7 +29,7 @@ func MessageList(db *storm.DB) func(response http.ResponseWriter, request *http.
 			var err error
 			count, err = strconv.Atoi(countStr)
 			if err != nil || (err == nil && count <= 0) {
-				http.Error(response, fmt.Sprintf("Invalid count: %s. Count has to be positive integer", countStr), http.StatusBadRequest)
+				buildJsonResponse(response, fmt.Sprintf("{\"status\": \"nok\", \"message\": \"Invalid count: %s. Count has to be positive integer\"}", countStr), http.StatusBadRequest)
 				return
 			}
 		}
