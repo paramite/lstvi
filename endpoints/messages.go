@@ -7,8 +7,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/asdine/storm"
-	"github.com/paramite/lstvi/models"
+	"github.com/paramite/lstvi/memcache"
 )
 
 const DEFAULT_LIST_COUNT = 100
@@ -21,7 +20,7 @@ func buildJsonResponse(response http.ResponseWriter, content string, statusCode 
 
 // MessageList writes last N (where N is given by the "request" parameter "count") records of messages to "response"
 // in JSON format. Otherwise reports relevant response with appropriate HTTP code based on situation.
-func MessageList(db *storm.DB) func(response http.ResponseWriter, request *http.Request) {
+func MessageList(cache *memcache.MessageCache) func(response http.ResponseWriter, request *http.Request) {
 	return func(response http.ResponseWriter, request *http.Request) {
 		countStr := request.URL.Query().Get("count")
 		count := DEFAULT_LIST_COUNT
@@ -33,32 +32,25 @@ func MessageList(db *storm.DB) func(response http.ResponseWriter, request *http.
 				return
 			}
 		}
-		output := make([]models.Message, 0, count)
-		if err := db.AllByIndex("Timestamp", &output, storm.Reverse(), storm.Limit(count)); err == nil {
-			if content, err := json.Marshal(output); err == nil {
-				buildJsonResponse(response, fmt.Sprintf("{\"status\": \"ok\", \"result\": %s}", string(content)), http.StatusOK)
-			} else {
-				buildJsonResponse(response, fmt.Sprintf("{\"status\": \"nok\", \"message\": \"Failed to convert data to JSON format: %s\"}", err.Error()), http.StatusInternalServerError)
-			}
+		output := cache.GetLast(count)
+		if content, err := json.Marshal(output); err == nil {
+			buildJsonResponse(response, fmt.Sprintf("{\"status\": \"ok\", \"result\": %s}", string(content)), http.StatusOK)
 		} else {
-			buildJsonResponse(response, fmt.Sprintf("{\"status\": \"nok\", \"message\": \"Failed to fetch data: %s\"}", err.Error()), http.StatusInternalServerError)
+			buildJsonResponse(response, fmt.Sprintf("{\"status\": \"nok\", \"message\": \"Failed to convert data to JSON format: %s\"}", err.Error()), http.StatusInternalServerError)
 		}
 	}
 }
 
-//Message saves given message to database
-func Message(db *storm.DB) func(response http.ResponseWriter, request *http.Request) {
+//Message saves given message to cache
+func Message(cache *memcache.MessageCache) func(response http.ResponseWriter, request *http.Request) {
 	return func(response http.ResponseWriter, request *http.Request) {
-		var msg models.Message
+		var msg memcache.Message
 		buffer := bytes.Buffer{}
 		buffer.ReadFrom(request.Body)
 		if err := json.Unmarshal(buffer.Bytes(), &msg); err == nil {
 			if msg.Timestamp > 0 && len(msg.Content) > 0 {
-				if err := db.Save(&msg); err == nil {
-					buildJsonResponse(response, "{\"status\": \"ok\"}", http.StatusOK)
-				} else {
-					buildJsonResponse(response, fmt.Sprintf("{\"status\": \"nok\", \"message\": \"%s\"}", err.Error()), http.StatusInternalServerError)
-				}
+				cache.Add(msg)
+				buildJsonResponse(response, "{\"status\": \"ok\"}", http.StatusOK)
 			} else {
 				buildJsonResponse(response, fmt.Sprintf("{\"status\": \"nok\", \"message\": \"Invalid request body: %s\"}", buffer.String()), http.StatusBadRequest)
 			}

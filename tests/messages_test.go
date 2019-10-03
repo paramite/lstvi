@@ -4,17 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
-	"log"
 	"net/http"
-	"os"
-	"path"
 	"sort"
 	"testing"
 
-	"github.com/asdine/storm"
 	"github.com/paramite/lstvi/endpoints"
-	"github.com/paramite/lstvi/models"
+	"github.com/paramite/lstvi/memcache"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -75,24 +70,14 @@ type MessageHandlingTestMatrix struct {
 }
 
 type MessageListResponse struct {
-	Status string           `json:"status"`
-	Result []models.Message `json:"result"`
+	Status string             `json:"status"`
+	Result []memcache.Message `json:"result"`
 }
 
 func TestMessageEndpoints(t *testing.T) {
-	// spawn temporary database
-	tmpdir, err := ioutil.TempDir(".", "tmp_lstvi")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer os.RemoveAll(tmpdir)
 
 	t.Run("Test message save handling", func(t *testing.T) {
-		db, err := storm.Open(path.Join(tmpdir, "message-save.db"))
-		defer db.Close()
-		if err != nil {
-			t.Fatalf("Failed to open database: %s.", err)
-		}
+		cache := memcache.NewMessageCache(TEST_LIST_COUNT)
 		// test response correctness on each request types
 		matrix := []MessageHandlingTestMatrix{
 			MessageHandlingTestMatrix{"Test case for valid request.",
@@ -106,50 +91,43 @@ func TestMessageEndpoints(t *testing.T) {
 			statusCache := 0
 			responseCache := ""
 			response := FakeResponseWriter{&statusCache, &responseCache}
-			handler := endpoints.Message(db)
+			handler := endpoints.Message(cache)
 			handler(response, request)
 			assert.Equalf(t, testCase.Response, *response.Content, testCase.Description)
 			assert.Equal(t, testCase.HttpCode, *response.Status)
 		}
 
 		// test valid state of DB
-		var msg models.Message
-		err = db.One("Timestamp", 1566461840, &msg)
-		if err != nil {
-			t.Fatalf("Failed to fetch message from DB: %s", err)
-		}
-		assert.Equal(t, "foobarbaz", msg.Content)
+		result := cache.GetByTimestamp(1566461840)
+		assert.Equal(t, 1, len(result))
+		assert.Equal(t, "foobarbaz", result[0].Content)
 	})
 
 	t.Run("Test message listing", func(t *testing.T) {
-		db, err := storm.Open(path.Join(tmpdir, "message-list.db"))
-		defer db.Close()
-		if err != nil {
-			t.Fatalf("Failed to open database: %s.", err)
-		}
+		cache := memcache.NewMessageCache(TEST_LIST_COUNT)
 		// create n message records
 		for i := 0; i <= TEST_LIST_COUNT; i++ {
 			request, _ := http.NewRequest("POST", "http://message", FakeBody{fmt.Sprintf("{\"msg\": \"xxx\", \"ts\": %d}", i)})
 			statusCache := 0
 			responseCache := ""
 			response := FakeResponseWriter{&statusCache, &responseCache}
-			handler := endpoints.Message(db)
+			handler := endpoints.Message(cache)
 			handler(response, request)
 		}
-		// request list of n-5 records
+		//   request list of n-5 records
 		request, _ := http.NewRequest("GET", fmt.Sprintf("http://messages?count=%d", TEST_LIST_COUNT-5), nil)
 		statusCache := 0
 		responseCache := ""
 		response := FakeResponseWriter{&statusCache, &responseCache}
-		handler := endpoints.MessageList(db)
+		handler := endpoints.MessageList(cache)
 		handler(response, request)
 
 		list := MessageListResponse{}
-		err = json.Unmarshal([]byte(responseCache), &list)
+		err := json.Unmarshal([]byte(responseCache), &list)
 		if err != nil {
 			t.Fatalf("Failed to unmarshal message list response: %s", err.Error())
 		}
-		assert.Equal(t, TEST_LIST_COUNT, list.Result[0].Timestamp)
-		assert.Equal(t, 6, list.Result[len(list.Result)-1].Timestamp)
+		assert.Equal(t, 6, list.Result[0].Timestamp)
+		assert.Equal(t, TEST_LIST_COUNT, list.Result[len(list.Result)-1].Timestamp)
 	})
 }
