@@ -2,14 +2,8 @@ package main
 
 import (
 	"flag"
-	"fmt"
-	"net/http"
-
-	goji "goji.io"
-	"goji.io/pat"
 
 	"github.com/paramite/lstvi/endpoints"
-	"github.com/paramite/lstvi/memcache"
 )
 
 func main() {
@@ -20,18 +14,5 @@ func main() {
 	tlsKey := flag.String("tls-key", "", "Path to tls private key matching given tls-cert.")
 	flag.Parse()
 
-	// database init
-	cache := memcache.NewMessageCache(*memInitCap)
-
-	// endpoints definition
-	mux := goji.NewMux()
-	mux.HandleFunc(pat.Post("/message"), endpoints.Message(cache))
-	mux.HandleFunc(pat.Get("/messages"), endpoints.MessageList(cache))
-
-	bindAddr := fmt.Sprintf("%s:%d", *bindIface, *bindPort)
-	if len(*tlsCert) > 0 && len(*tlsKey) > 0 {
-		fmt.Printf("%s\n", http.ListenAndServeTLS(bindAddr, *tlsCert, *tlsKey, mux))
-	} else {
-		fmt.Printf("%s\n", http.ListenAndServe(fmt.Sprintf("%s:%d", *bindIface, *bindPort), mux))
-	}
+	endpoints.RunDispatcher(*memInitCap, *bindIface, *bindPort, *tlsCert, *tlsKey)
 }

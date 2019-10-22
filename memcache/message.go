@@ -25,6 +25,7 @@ func (self *MessageCache) Add(msg Message) {
 		self.indexTs[msg.Timestamp] = make([]int, 0)
 	}
 	self.indexTs[msg.Timestamp] = append(self.indexTs[msg.Timestamp], self.lastPk)
+	msg.Pk = self.lastPk
 	self.store = append(self.store, msg)
 	self.lastPk++
 	self.lock.Unlock()
