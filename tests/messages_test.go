@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/paramite/lstvi/endpoints"
 	"github.com/paramite/lstvi/memcache"
@@ -78,6 +79,7 @@ func TestMessageEndpoints(t *testing.T) {
 
 	t.Run("Test message save handling", func(t *testing.T) {
 		cache := memcache.NewMessageCache(TEST_LIST_COUNT)
+		go cache.Process()
 		// test response correctness on each request types
 		matrix := []MessageHandlingTestMatrix{
 			MessageHandlingTestMatrix{"Test case for valid request.",
@@ -91,12 +93,12 @@ func TestMessageEndpoints(t *testing.T) {
 			statusCache := 0
 			responseCache := ""
 			response := FakeResponseWriter{&statusCache, &responseCache}
-			handler := endpoints.Message(cache)
+			handler := endpoints.Message(cache.Queue)
 			handler(response, request)
 			assert.Equalf(t, testCase.Response, *response.Content, testCase.Description)
 			assert.Equal(t, testCase.HttpCode, *response.Status)
 		}
-
+		time.Sleep(1 * time.Second)
 		// test valid state of DB
 		result := cache.GetByTimestamp(1566461840)
 		assert.Equal(t, 1, len(result))
@@ -105,15 +107,17 @@ func TestMessageEndpoints(t *testing.T) {
 
 	t.Run("Test message listing", func(t *testing.T) {
 		cache := memcache.NewMessageCache(TEST_LIST_COUNT)
+		go cache.Process()
 		// create n message records
 		for i := 0; i <= TEST_LIST_COUNT; i++ {
 			request, _ := http.NewRequest("POST", "http://message", FakeBody{fmt.Sprintf("{\"msg\": \"xxx\", \"ts\": %d}", i)})
 			statusCache := 0
 			responseCache := ""
 			response := FakeResponseWriter{&statusCache, &responseCache}
-			handler := endpoints.Message(cache)
+			handler := endpoints.Message(cache.Queue)
 			handler(response, request)
 		}
+		time.Sleep(1 * time.Second)
 		//   request list of n-5 records
 		request, _ := http.NewRequest("GET", fmt.Sprintf("http://messages?count=%d", TEST_LIST_COUNT-5), nil)
 		statusCache := 0
@@ -127,7 +131,8 @@ func TestMessageEndpoints(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to unmarshal message list response: %s", err.Error())
 		}
-		assert.Equal(t, 6, list.Result[0].Timestamp)
-		assert.Equal(t, TEST_LIST_COUNT, list.Result[len(list.Result)-1].Timestamp)
+		assert.Equal(t, TEST_LIST_COUNT-5, len(list.Result))
+		assert.Equal(t, 5, list.Result[0].Pk)
+		assert.Equal(t, TEST_LIST_COUNT-1, list.Result[len(list.Result)-1].Pk)
 	})
 }

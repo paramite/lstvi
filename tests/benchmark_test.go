@@ -40,15 +40,27 @@ func sendPOSTRequest(url string, data []byte) error {
 
 func BenchmarkMessageListResponse(b *testing.B) {
 	go endpoints.RunDispatcher(BENCHMARK_LIST_COUNT, BIND_IF, BIND_PORT, "", "")
-	time.Sleep(1 * time.Second)
+	time.Sleep(time.Millisecond)
 
 	b.Run("Benchmark message creation", func(p *testing.B) {
-		for i := 0; i <= BENCHMARK_LIST_COUNT; i++ {
-			if err := sendPOSTRequest(fmt.Sprintf("http://%s:%d/message", BIND_IF, BIND_PORT), []byte(fmt.Sprintf(fmt.Sprintf("{\"msg\": \"xxx\", \"ts\": %d}", i+1)))); err != nil {
-				b.Fatalf("Failed to create message #%d: %s", i, err)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			var wg sync.WaitGroup
+			for c := 0; c < CLIENT_COUNT; c++ {
+				wg.Add(1)
+				go func() {
+					for i := 0; i <= BENCHMARK_LIST_COUNT/CLIENT_COUNT; i++ {
+						if err := sendPOSTRequest(fmt.Sprintf("http://%s:%d/message", BIND_IF, BIND_PORT), []byte(fmt.Sprintf(fmt.Sprintf("{\"msg\": \"xxx\", \"ts\": %d}", i+1)))); err != nil {
+							b.Fatalf("Failed to create message #%d: %s", i, err)
+						}
+					}
+					wg.Done()
+				}()
 			}
 		}
 	})
+
+	time.Sleep(20 * time.Second)
 
 	b.Run("Benchmark single client - message list", func(p *testing.B) {
 		b.ResetTimer()

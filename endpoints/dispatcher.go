@@ -17,10 +17,11 @@ import (
 func RunDispatcher(memInitCap int, bindIface string, bindPort int, tlsCert, tlsKey string) {
 	// database init
 	cache := memcache.NewMessageCache(memInitCap)
+	go cache.Process()
 
 	// endpoints definition
 	mux := goji.NewMux()
-	mux.HandleFunc(pat.Post("/message"), Message(cache))
+	mux.HandleFunc(pat.Post("/message"), Message(cache.Queue))
 	mux.HandleFunc(pat.Get("/messages"), MessageList(cache))
 
 	bindAddr := fmt.Sprintf("%s:%d", bindIface, bindPort)

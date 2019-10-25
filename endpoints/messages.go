@@ -42,14 +42,14 @@ func MessageList(cache *memcache.MessageCache) func(response http.ResponseWriter
 }
 
 //Message saves given message to cache
-func Message(cache *memcache.MessageCache) func(response http.ResponseWriter, request *http.Request) {
+func Message(queue chan memcache.Message) func(response http.ResponseWriter, request *http.Request) {
 	return func(response http.ResponseWriter, request *http.Request) {
 		var msg memcache.Message
 		buffer := bytes.Buffer{}
 		buffer.ReadFrom(request.Body)
 		if err := json.Unmarshal(buffer.Bytes(), &msg); err == nil {
 			if msg.Timestamp > 0 && len(msg.Content) > 0 {
-				cache.Add(msg)
+				queue <- msg
 				buildJsonResponse(response, "{\"status\": \"ok\"}", http.StatusOK)
 			} else {
 				buildJsonResponse(response, fmt.Sprintf("{\"status\": \"nok\", \"message\": \"Invalid request body: %s\"}", buffer.String()), http.StatusBadRequest)
