@@ -110,7 +110,7 @@ func TestMessageEndpoints(t *testing.T) {
 		go cache.Process()
 		// create n message records
 		for i := 0; i <= TEST_LIST_COUNT; i++ {
-			request, _ := http.NewRequest("POST", "http://message", FakeBody{fmt.Sprintf("{\"msg\": \"xxx\", \"ts\": %d}", i)})
+			request, _ := http.NewRequest("POST", "http://message", FakeBody{fmt.Sprintf("{\"msg\": \"xxx%d\", \"ts\": %d}", i, i)})
 			statusCache := 0
 			responseCache := ""
 			response := FakeResponseWriter{&statusCache, &responseCache}
@@ -131,8 +131,9 @@ func TestMessageEndpoints(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to unmarshal message list response: %s", err.Error())
 		}
+
 		assert.Equal(t, TEST_LIST_COUNT-5, len(list.Result))
-		assert.Equal(t, 5, list.Result[0].Pk)
-		assert.Equal(t, TEST_LIST_COUNT-1, list.Result[len(list.Result)-1].Pk)
+		assert.Equal(t, TEST_LIST_COUNT, list.Result[0].Timestamp)
+		assert.Equal(t, 6, list.Result[len(list.Result)-1].Timestamp)
 	})
 }
