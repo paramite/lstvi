@@ -3,6 +3,7 @@ package tests
 import (
 	"bytes"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"sync"
 	"testing"
@@ -13,9 +14,8 @@ import (
 
 const (
 	BENCHMARK_LIST_COUNT = 100000
-	BIND_IF              = "127.0.0.1"
-	BIND_PORT            = 19991
 	CLIENT_COUNT         = 4
+	CONF_CONTENT         = `{"bind_host": "127.0.0.1", "bind_port": 19991}`
 )
 
 func sendPOSTRequest(url string, data []byte) error {
@@ -38,8 +38,29 @@ func sendPOSTRequest(url string, data []byte) error {
 	return nil
 }
 
+func GenerateTestConfig(content string) (string, error) {
+	file, err := ioutil.TempFile(".", "lstvi_test_config")
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	file.WriteString(content)
+	if err != nil {
+		return "", err
+	}
+	return file.Name(), nil
+}
+
 func BenchmarkMessageListResponse(b *testing.B) {
-	go endpoints.RunDispatcher(BENCHMARK_LIST_COUNT, BIND_IF, BIND_PORT, "", "")
+	config, err := GenerateTestConfig(CONF_CONTENT)
+	if err != nil {
+		b.Fatalf("Failed to create temporary config file: %s", err.Error())
+	}
+	dispatcher, err := endpoints.NewDispatcher(BENCHMARK_LIST_COUNT, config)
+	if err != nil {
+		b.Fatalf("Failed to load config file: %s", err.Error())
+	}
+	go dispatcher.Start()
 	time.Sleep(time.Millisecond)
 
 	b.Run("Benchmark message creation", func(p *testing.B) {
@@ -49,8 +70,9 @@ func BenchmarkMessageListResponse(b *testing.B) {
 			for c := 0; c < CLIENT_COUNT; c++ {
 				wg.Add(1)
 				go func() {
+					endpointUrl := fmt.Sprintf("http://%s:%d/message", dispatcher.Connection.BindInterface, dispatcher.Connection.BindPort)
 					for i := 0; i <= BENCHMARK_LIST_COUNT/CLIENT_COUNT; i++ {
-						if err := sendPOSTRequest(fmt.Sprintf("http://%s:%d/message", BIND_IF, BIND_PORT), []byte(fmt.Sprintf(fmt.Sprintf("{\"msg\": \"xxx\", \"ts\": %d}", i+1)))); err != nil {
+						if err := sendPOSTRequest(endpointUrl, []byte(fmt.Sprintf(fmt.Sprintf("{\"msg\": \"xxx\", \"ts\": %d}", i+1)))); err != nil {
 							b.Fatalf("Failed to create message #%d: %s", i, err)
 						}
 					}
@@ -65,7 +87,8 @@ func BenchmarkMessageListResponse(b *testing.B) {
 	b.Run("Benchmark single client - message list", func(p *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			resp, err := http.Get(fmt.Sprintf("http://%s:%d/messages?count=%d", BIND_IF, BIND_PORT, BENCHMARK_LIST_COUNT))
+			endpointUrl := fmt.Sprintf("http://%s:%d/messages?count=%d", dispatcher.Connection.BindInterface, dispatcher.Connection.BindPort, BENCHMARK_LIST_COUNT)
+			resp, err := http.Get(endpointUrl)
 			if err != nil {
 				b.Fatal("Failed to fetch messages")
 			}
@@ -85,7 +108,8 @@ func BenchmarkMessageListResponse(b *testing.B) {
 			for c := 0; c < CLIENT_COUNT; c++ {
 				wg.Add(1)
 				go func() {
-					resp, err := http.Get(fmt.Sprintf("http://%s:%d/messages?count=%d", BIND_IF, BIND_PORT, BENCHMARK_LIST_COUNT))
+					endpointUrl := fmt.Sprintf("http://%s:%d/messages?count=%d", dispatcher.Connection.BindInterface, dispatcher.Connection.BindPort, BENCHMARK_LIST_COUNT)
+					resp, err := http.Get(endpointUrl)
 					if err != nil {
 						b.Fatal("Failed to fetch messages")
 					}

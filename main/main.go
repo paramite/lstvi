@@ -2,17 +2,22 @@ package main
 
 import (
 	"flag"
+	"fmt"
+	"os"
 
 	"github.com/paramite/lstvi/endpoints"
 )
 
 func main() {
 	memInitCap := flag.Int("initial-capacity", 100, "Initial capacity for data storage.")
-	bindIface := flag.String("bind-iface", "127.0.0.1", "Interface on which to serve.")
-	bindPort := flag.Int("bind-port", 16661, "Port on which to serve.")
-	tlsCert := flag.String("tls-cert", "", "Path to tls certificate.")
-	tlsKey := flag.String("tls-key", "", "Path to tls private key matching given tls-cert.")
+	config := flag.String("config", "/etc/lstvi_config.json", "Path to configuration file.")
 	flag.Parse()
 
-	endpoints.RunDispatcher(*memInitCap, *bindIface, *bindPort, *tlsCert, *tlsKey)
+	dispatcher, err := endpoints.NewDispatcher(*memInitCap, *config)
+	if err != nil {
+		fmt.Printf("Failed to start server: %s\n", err.Error())
+		flag.Usage()
+		os.Exit(1)
+	}
+	dispatcher.Start()
 }
