@@ -1,0 +1,26 @@
+# vim: noai:ts=2:sw=2:ft=yaml:
+language: minimal
+
+git:
+  depth: 1
+
+sudo: required
+
+services:
+  - docker
+
+env:
+  global:
+
+# pull base image
+before_install:
+  - docker pull centos:7
+
+# execute unit test suite
+install:
+  - docker run -uroot -p 19991:19991  -it --volume $PWD:/go/src/github.com/paramite/lstvi:z --workdir /go/src/github.com/paramite/lstvi centos:7 /bin/sh -c 'sh ./run_tests.sh'
+
+# test containter build
+script:
+  - docker build --ignore-permissions .
+  - docker images
